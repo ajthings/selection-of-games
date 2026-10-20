@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Selection of Games</title>
+<style>
+:root{--bg:#1d1b3a;--card:#2c2953;--acc:#ffb347;--txt:#fff8ee;--mut:#b9b3e0}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+header{display:flex;align-items:center;gap:12px;padding:14px 18px;background:#241f4a;position:sticky;top:0;z-index:5}
+header h1{font-size:20px;margin:0;flex:1}
+button{font:inherit;background:var(--acc);color:#2b1d00;border:0;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:600}
+button[hidden]{display:none}
+#hub{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;padding:18px}
+.tile{background:var(--card);border-radius:16px;padding:18px 12px;text-align:center;cursor:pointer;transition:transform .15s}
+.tile:hover{transform:translateY(-3px)}
+.tile.locked{opacity:.45;cursor:default;transform:none}
+.tile .i{font-size:40px}
+.tile .n{margin-top:8px;font-weight:600}
+.tile .s{font-size:12px;color:var(--mut);margin-top:4px}
+#play{display:none;padding:14px;text-align:center}
+canvas{background:#120f2a;border-radius:14px;max-width:100%;touch-action:none;display:block;margin:0 auto}
+.grid{display:inline-grid;gap:4px;margin:8px auto}
+.cell{width:44px;height:44px;border-radius:8px;background:var(--card);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;user-select:none;cursor:pointer}
+.msg{min-height:34px;margin:8px;color:var(--mut);display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <button id="back" hidden>← Back</button>
+  <h1 id="title">Selection of Games</h1>
+</header>
+<main>
+  <div id="hub"></div>
+  <div id="play"><div id="stage"></div></div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const rnd = n => Math.floor(Math.random() * n);
+
+function bar(el, btns = []) {
+  const w = document.createElement('div');
+  w.className = 'msg';
+  const s = document.createElement('span');
+  w.append(s);
+  btns.forEach(([label, fn]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.onclick = fn;
+    w.append(b);
+  });
+  el.append(w);
+  return s;
+}
+
+function mk(el, w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.style.width = w + 'px';
+  el.append(c);
+  return c;
+}
+
+// Keyboard (arrows/WASD) and swipe input. Calls cb with 'U' | 'D' | 'L' | 'R'.
+function dir(el, cb) {
+  const m = {ArrowUp:'U', ArrowDown:'D', ArrowLeft:'L', ArrowRight:'R', w:'U', s:'D', a:'L', d:'R'};
+  const k = e => { if (m[e.key]) { e.preventDefault(); cb(m[e.key]); } };
+  let x, y;
+  const ts = e => { x = e.touches[0].clientX; y = e.touches[0].clientY; };
+  const te = e => {
+    const dx = e.changedTouches[0].clientX - x, dy = e.changedTouches[0].clientY - y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+    cb(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U'));
+  };
+  addEventListener('keydown', k);
+  el.addEventListener('touchstart', ts, {passive: true});
+  el.addEventListener('touchend', te);
+  return () => removeEventListener('keydown', k);
+}
+
+const GAMES = {
+  snake: {
+    name: 'Snake', icon: '🐍',
+    run(el) {
+      const N = 20, S = 15;
+      const c = mk(el, N * S, N * S), g = c.getContext('2d');
+      const st = bar(el, [['Restart', () => init()]]);
+      let s, d, nd, f, score, over, iv;
+      const place = () => { do f = {x: rnd(N), y: rnd(N)}; while (s.some(p => p.x == f.x && p.y == f.y)); };
+      const init = () => {
+        s = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+        d = {x:1,y:0}; nd = d; score = 0; over = 0; place();
+        st.textContent = 'Eat the pink dots!';
+      };
+      const turn = k => {
+        const v = {U:[0,-1], D:[0,1], L:[-1,0], R:[1,0]}[k];
+        if (v && (v[0] + d.x || v[1] + d.y)) nd = {x: v[0], y: v[1]}; // ignore reversing
+      };
+      const step = () => {
+        if (over) return;
+        d = nd;
+        const h = {x: s[0].x + d.x, y: s[0].y + d.y};
+        if (h.x < 0 || h.y < 0 || h.x >= N || h.y >= N || s.some(p => p.x == h.x && p.y == h.y)) {
+          over = 1; st.textContent = `Game over! Score ${score}`; return;
+        }
+        s.unshift(h);
+        if (h.x == f.x && h.y == f.y) { score++; place(); } else s.pop();
+        st.textContent = 'Score ' + score;
+        g.fillStyle = '#120f2a'; g.fillRect(0, 0, N * S, N * S);
+        g.fillStyle = '#ff6b8a'; g.fillRect(f.x * S + 2, f.y * S + 2, S - 4, S - 4);
+        g.fillStyle = '#7ee787'; s.forEach(p => g.fillRect(p.x * S + 1, p.y * S + 1, S - 2, S - 2));
+      };
+      init();
+      const kb = dir(c, turn);
+      iv = setInterval(step, 120);
+      return () => { clearInterval(iv); kb(); };
+    }
+  },
+
+  g2048: {
+    name: '2048', icon: '🔢',
+    run(el) {
+      let b, sc;
+      const st = bar(el, [['New', () => init()]]);
+      const bd = document.createElement('div');
+      bd.className = 'grid'; bd.style.gridTemplateColumns = 'repeat(4,64px)';
+      el.append(bd);
+      const add = () => {
+        const e = b.map((v, i) => v ? -1 : i).filter(i => i >= 0);
+        if (e.length) b[e[rnd(e.length)]] = Math.random() < .9 ? 2 : 4;
+      };
+      const can = () => b.some((v, i) => !v || (i % 4 < 3 && b[i] == b[i+1]) || (i < 12 && b[i] == b[i+4]));
+      const slide = r => {
+        r = r.filter(x => x);
+        for (let i = 0; i < r.length - 1; i++) if (r[i] == r[i+1]) { r[i] *= 2; sc += r[i]; r.splice(i+1, 1); }
+        while (r.length < 4) r.push(0);
+        return r;
+      };
+      const draw = () => {
+        st.textContent = `Score ${sc}` + (b.includes(2048) ? ' · You win! 🎉' : can() ? '' : ' · Game over');
+        bd.innerHTML = '';
+        b.forEach(v => {
+          const c = document.createElement('div');
+          c.className = 'cell';
+          c.textContent = v || '';
+          if (v) c.style.background = `hsl(${Math.log2(v) * 40},70%,${v > 64 ? 45 : 60}%)`;
+          bd.append(c);
+        });
+      };
+      const move = k => {
+        const old = b.join();
+        for (let i = 0; i < 4; i++) {
+          const idx = [0,1,2,3].map(j => k == 'L' ? i*4+j : k == 'R' ? i*4+3-j : k == 'U' ? j*4+i : (3-j)*4+i);
+          const v = slide(idx.map(x => b[x]));
+          idx.forEach((x, j) => b[x] = v[j]);
+        }
+        if (b.join() != old) add();
+        draw();
+      };
+      const init = () => { b = Array(16).fill(0); sc = 0; add(); add(); draw(); };
+      init();
+      const kb = dir(bd, move);
+      return () => kb();
+    }
+  },
+
+  minesweeper: {
+    name: 'Minesweeper', icon: '💣',
+    run(el) {
+      const W = 8, M = 10;
+      let m, o, f, end, fm = 0;
+      const st = bar(el, [
+        ['New', () => init()],
+        ['Flag: off', e => { fm ^= 1; e.target.textContent = 'Flag: ' + (fm ? 'on' : 'off'); }]
+      ]);
+      const bd = document.createElement('div');
+      bd.className = 'grid'; bd.style.gridTemplateColumns = `repeat(${W},40px)`;
+      el.append(bd);
+      const nb = i => {
+        const x = i % W, y = (i / W) | 0, r = [];
+        for (let a = -1; a < 2; a++) for (let b = -1; b < 2; b++) {
+          const X = x + b, Y = y + a;
+          if ((a || b) && X >= 0 && Y >= 0 && X < W && Y < W) r.push(Y * W + X);
+        }
+        return r;
+      };
+      const cnt = i => nb(i).filter(j => m[j]).length;
+      const rev = i => { if (o[i] || f[i]) return; o[i] = 1; if (!cnt(i)) nb(i).forEach(rev); };
+      const draw = () => {
+        bd.innerHTML = '';
+        const colors = ['', '#4d96ff', '#6bcb77', '#ff6b6b', '#c77dff', '#ffb347'];
+        for (let i = 0; i < W * W; i++) {
+          const c = document.createElement('div');
+          c.className = 'cell';
+          if (o[i]) {
+            c.style.background = '#3a3566';
+            if (m[i]) c.textContent = '💣';
+            else if (cnt(i)) { c.textContent = cnt(i); c.style.color = colors[cnt(i)] || '#fff'; }
+          } else if (f[i]) c.textContent = '🚩';
+          c.onclick = () => hit(i);
+          bd.append(c);
+        }
+      };
+      const hit = i => {
+        if (end) return;
+        if (fm) { f[i] ^= 1; draw(); return; }
+        if (f[i] || o[i]) return;
+        if (m[i]) {
+          end = 1; m.forEach((v, j) => { if (v) o[j] = 1; });
+          st.textContent = 'Boom! 💥 Try again';
+        } else {
+          rev(i);
+          if (o.filter(v => v).length == W * W - M) { end = 1; st.textContent = 'You cleared the field! 🎉'; }
+        }
+        draw();
+      };
+      const init = () => {
+        m = Array(W * W).fill(0); o = [...m]; f = [...m]; end = 0;
+        let n = 0;
+        while (n < M) { const i = rnd(W * W); if (!m[i]) { m[i] = 1; n++; } }
+        st.textContent = 'Find all the safe squares';
+        draw();
+      };
+      init();
+      return null;
+    }
+  },
+
+  breakout: {
+    name: 'Breakout', icon: '🧱',
+    run(el) {
+      const W = 320, H = 400;
+      const c = mk(el, W, H), g = c.getContext('2d');
+      const st = bar(el, [['Restart', () => init()]]);
+      let px, bx, by, vx, vy, bk, lives, score, end, iv;
+      const serve = () => { bx = px + 40; by = H - 60; vx = 2.5 * (Math.random() < .5 ? -1 : 1); vy = -3.5; };
+      const init = () => {
+        px = 120; lives = 3; score = 0; end = 0; bk = [];
+        for (let r = 0; r < 5; r++) for (let k = 0; k < 8; k++)
+          bk.push({x: k * 40 + 4, y: 30 + r * 18, a: 1, h: r * 45});
+        serve();
+      };
+      const tick = () => {
+        if (end) return;
+        px = Math.max(0, Math.min(W - 80, px));
+        bx += vx; by += vy;
+        if (bx < 5) { bx = 5; vx = -vx; }
+        if (bx > W - 5) { bx = W - 5; vx = -vx; }
+        if (by < 5) { by = 5; vy = -vy; }
+        if (vy > 0 && by > H - 30 && by < H - 18 && bx > px - 4 && bx < px + 84) {
+          vy = -Math.abs(vy); vx = (bx - (px + 40)) / 12;
+        }
+        bk.forEach(b => {
+          if (b.a && bx > b.x - 4 && bx < b.x + 36 && by > b.y - 4 && by < b.y + 14) {
+            b.a = 0; vy = -vy; score += 10;
+          }
+        });
+        if (by > H) {
+          lives--;
+          if (lives <= 0) { end = 1; st.textContent = `Game over! Score ${score}`; }
+          else serve();
+        }
+        if (bk.every(b => !b.a)) { end = 1; st.textContent = 'You win! 🎉'; }
+        if (!end) st.textContent = `Score ${score} · Lives ${'❤️'.repeat(lives)}`;
+        g.fillStyle = '#120f2a'; g.fillRect(0, 0, W, H);
+        bk.forEach(b => { if (b.a) { g.fillStyle = `hsl(${b.h},80%,60%)`; g.fillRect(b.x, b.y, 36, 14); } });
+        g.fillStyle = '#fff'; g.fillRect(px, H - 24, 80, 10);
+        g.beginPath(); g.arc(bx, by, 5, 0, 7); g.fill();
+      };
+      init();
+      c.onpointermove = e => { const r = c.getBoundingClientRect(); px = (e.clientX - r.left) * W / r.width - 40; };
+      const kb = dir(c, k => { if (k == 'L') px -= 14; if (k == 'R') px += 14; });
+      iv = setInterval(tick, 16);
+      return () => { clearInterval(iv); kb(); };
+    }
+  },
+
+  tictactoe: {
+    name: 'Tic-Tac-Toe', icon: '❌',
+    run(el) {
+      const L = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+      let b, done;
+      const st = bar(el, [['New', () => init()]]);
+      const bd = document.createElement('div');
+      bd.className = 'grid'; bd.style.gridTemplateColumns = 'repeat(3,80px)';
+      el.append(bd);
+      const find = p => {
+        for (const l of L) {
+          const v = l.map(i => b[i]);
+          if (v.filter(x => x == p).length == 2 && v.includes('')) return l[v.indexOf('')];
+        }
+        return -1;
+      };
+      const check = () => {
+        const w = L.find(l => l.every(i => b[i] == 'X') || l.every(i => b[i] == 'O'));
+        if (w) { done = 1; st.textContent = b[w[0]] == 'X' ? 'You win! 🎉' : 'Computer wins 🤖'; return 1; }
+        if (!b.includes('')) { done = 1; st.textContent = "It's a draw"; return 1; }
+        st.textContent = 'Your turn (X)';
+      };
+      const draw = () => {
+        bd.innerHTML = '';
+        b.forEach((v, i) => {
+          const c = document.createElement('div');
+          c.className = 'cell'; c.textContent = v; c.onclick = () => play(i);
+          bd.append(c);
+        });
+      };
+      const play = i => {
+        if (done || b[i]) return;
+        b[i] = 'X';
+        if (!check()) {
+          let m = find('O');
+          if (m < 0) m = find('X');
+          if (m < 0) { const e = b.map((x, j) => x ? -1 : j).filter(j => j >= 0); m = e[rnd(e.length)]; }
+          b[m] = 'O';
+          check();
+        }
+        draw();
+      };
+      const init = () => { b = Array(9).fill(''); done = 0; st.textContent = 'Your turn (X)'; draw(); };
+      init();
+      return null;
+    }
+  },
+
+  memory: {
+    name: 'Memory Match', icon: '🃏',
+    run(el) {
+      const E = ['🍎','🍋','🍇','🍓','🍒','🍑','🥝','🍍'];
+      let d, up, lock, got;
+      const st = bar(el, [['New', () => init()]]);
+      const bd = document.createElement('div');
+      bd.className = 'grid'; bd.style.gridTemplateColumns = 'repeat(4,64px)';
+      el.append(bd);
+      const draw = () => {
+        bd.innerHTML = '';
+        d.forEach((v, i) => {
+          const c = document.createElement('div');
+          c.className = 'cell';
+          const show = up.includes(i) || got.includes(i);
+          c.textContent = show ? v : '❔';
+          c.style.opacity = got.includes(i) ? .5 : 1;
+          c.onclick = () => flip(i);
+          bd.append(c);
+        });
+      };
+      const flip = i => {
+        if (lock || up.includes(i) || got.includes(i)) return;
+        up.push(i); draw();
+        if (up.length < 2) return;
+        lock = 1;
+        const [a, b] = up;
+        if (d[a] == d[b]) {
+          got.push(a, b); up = []; lock = 0;
+          st.textContent = got.length == 16 ? 'You found them all! 🎉' : 'Match!';
+          draw();
+        } else {
+          setTimeout(() => { up = []; lock = 0; draw(); }, 700);
+        }
+      };
+      const init = () => {
+        d = [...E, ...E].sort(() => Math.random() - .5);
+        up = []; got = []; lock = 0;
+        st.textContent = 'Find the pairs';
+        draw();
+      };
+      init();
+      return null;
+    }
+  },
+
+  simon: {
+    name: 'Simon Says', icon: '🎵',
+    run(el) {
+      const C = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff'];
+      let seq = [], ui = 0, busy = 1, t;
+      const st = bar(el, [['Start', () => { clearTimeout(t); seq = []; next(); }]]);
+      st.textContent = 'Press Start';
+      const bd = document.createElement('div');
+      bd.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;width:260px;margin:10px auto';
+      el.append(bd);
+      const pads = C.map((col, i) => {
+        const p = document.createElement('div');
+        p.style.cssText = `height:120px;border-radius:16px;background:${col};opacity:.4;cursor:pointer`;
+        p.onclick = () => press(i);
+        bd.append(p);
+        return p;
+      });
+      const flash = i => { pads[i].style.opacity = 1; setTimeout(() => pads[i].style.opacity = .4, 300); };
+      const play = () => {
+        busy = 1; let k = 0;
+        const go = () => {
+          if (k < seq.length) { flash(seq[k++]); t = setTimeout(go, 600); }
+          else { busy = 0; ui = 0; st.textContent = 'Your turn!'; }
+        };
+        t = setTimeout(go, 500);
+      };
+      const next = () => { seq.push(rnd(4)); st.textContent = 'Round ' + seq.length; play(); };
+      const press = i => {
+        if (busy || !seq.length) return;
+        flash(i);
+        if (i != seq[ui]) { busy = 1; st.textContent = `Oops! You reached round ${seq.length - 1}`; return; }
+        if (++ui == seq.length) { busy = 1; st.textContent = 'Nice!'; t = setTimeout(next, 900); }
+      };
+      return () => clearTimeout(t);
+    }
+  },
+
+  uno: {
+    name: 'Uno', icon: '🎴',
+    run(el) {
+      const COL = ['R','Y','G','B'];
+      const CSS = {R:'#ff6b6b', Y:'#ffd93d', G:'#6bcb77', B:'#4d96ff', K:'#3a3566'};
+      const NAME = {R:'red', Y:'yellow', G:'green', B:'blue'};
+      const LBL = {skip:'⊘', rev:'⇄', '+2':'+2', wild:'W', wild4:'+4'};
+      let deck, pile, hands, turn, color, over;
+      const st = bar(el, [['New game', () => init()]]);
+      const area = document.createElement('div');
+      el.append(area);
+      const mkDeck = () => {
+        const d = [];
+        COL.forEach(c => {
+          d.push({c, v: '0'});
+          for (let n = 1; n <= 9; n++) d.push({c, v: String(n)}, {c, v: String(n)});
+          ['skip', 'rev', '+2'].forEach(v => d.push({c, v}, {c, v}));
+        });
+        for (let i = 0; i < 4; i++) d.push({c: 'K', v: 'wild'}, {c: 'K', v: 'wild4'});
+        return d.sort(() => Math.random() - .5);
+      };
+      const drawCard = () => {
+        if (!deck.length) { const top = pile.pop(); deck = pile.sort(() => Math.random() - .5); pile = [top]; }
+        return deck.pop();
+      };
+      const top = () => pile[pile.length - 1];
+      const playable = c => c.c == 'K' || c.c == color || c.v == top().v;
+      const cardEl = (c, onclick) => {
+        const e = document.createElement('div');
+        e.className = 'cell';
+        e.style.cssText = `width:56px;height:80px;font-size:18px;border:2px solid #fff8ee;background:${CSS[c.c]};color:${c.c == 'Y' ? '#222' : '#fff'}`;
+        e.textContent = LBL[c.v] || c.v;
+        if (onclick) e.onclick = onclick;
+        return e;
+      };
+      const act = (who, card, chosen) => {
+        pile.push(card);
+        color = card.c == 'K' ? chosen : card.c;
+        const other = 1 - who;
+        let again = card.v == 'skip' || card.v == 'rev';
+        if (card.v == '+2' || card.v == 'wild4') {
+          for (let n = card.v == '+2' ? 2 : 4; n > 0; n--) hands[other].push(drawCard());
+          again = true;
+        }
+        if (!hands[who].length) over = 1;
+        else turn = again ? who : other;
+        refresh();
+        if (over) st.textContent = who == 0 ? 'You win! 🎉' : 'Computer wins! Try again';
+        else if (turn == 1) setTimeout(cpuTurn, 900);
+      };
+      const humanPlay = i => {
+        if (over || turn != 0) return;
+        const card = hands[0][i];
+        if (!playable(card)) { st.textContent = "That card doesn't match. Try another or draw."; return; }
+        if (card.c == 'K') {
+          pickColor(c => { hands[0].splice(i, 1); act(0, card, c); });
+          return;
+        }
+        hands[0].splice(i, 1);
+        act(0, card, card.c);
+      };
+      const humanDraw = () => {
+        if (over || turn != 0) return;
+        hands[0].push(drawCard());
+        turn = 1; refresh();
+        setTimeout(cpuTurn, 900);
+      };
+      const cpuTurn = () => {
+        if (over || turn != 1) return;
+        const h = hands[1];
+        const i = h.findIndex(playable);
+        if (i < 0) { h.push(drawCard()); turn = 0; refresh(); return; }
+        const card = h.splice(i, 1)[0];
+        let chosen = null;
+        if (card.c == 'K') {
+          const cnt = {};
+          COL.forEach(c => cnt[c] = 0);
+          h.forEach(c => { if (c.c != 'K') cnt[c.c]++; });
+          chosen = COL.reduce((a, b) => cnt[b] > cnt[a] ? b : a);
+        }
+        act(1, card, chosen);
+      };
+      const pickColor = cb => {
+        area.innerHTML = '';
+        st.textContent = 'Pick a color:';
+        const p = document.createElement('div');
+        p.style.cssText = 'display:flex;gap:10px;justify-content:center;margin:20px 0';
+        COL.forEach(c => {
+          const b = document.createElement('div');
+          b.style.cssText = `width:60px;height:60px;border-radius:12px;background:${CSS[c]};cursor:pointer`;
+          b.onclick = () => cb(c);
+          p.append(b);
+        });
+        area.append(p);
+      };
+      const refresh = () => {
+        if (!over) st.textContent = turn == 0 ? 'Your turn' : 'Computer is thinking…';
+        area.innerHTML = '';
+        const info = document.createElement('div');
+        info.style.cssText = 'text-align:center;margin:6px';
+        info.textContent = `Computer has ${hands[1].length} cards · Color: ${NAME[color]}`;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:center;align-items:center;gap:16px;margin:8px 0';
+        row.append(cardEl(top()));
+        const dr = document.createElement('button');
+        dr.textContent = 'Draw card';
+        dr.onclick = humanDraw;
+        row.append(dr);
+        const hand = document.createElement('div');
+        hand.style.cssText = 'display:flex;flex-wrap:wrap;justify-content:center;gap:6px';
+        hands[0].forEach((c, i) => hand.append(cardEl(c, () => humanPlay(i))));
+        area.append(info, row, hand);
+      };
+      const init = () => {
+        deck = mkDeck(); hands = [[], []]; over = 0; turn = 0;
+        for (let i = 0; i < 7; i++) hands.forEach(h => h.push(deck.pop()));
+        let first = deck.pop();
+        while (first.c == 'K') { deck.unshift(first); first = deck.pop(); }
+        pile = [first]; color = first.c;
+        refresh();
+      };
+      init();
+      return () => { over = 1; };
+    }
+  },
+  drawplus: {
+    name: 'Drawing+', icon: '🖌️',
+    run(el) {
+      const cols = ['#ffffff','#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#c77dff'];
+      let col = '#ffffff', sz = 6, dn = 0, lx, ly, er = 0;
+      const c = mk(el, 320, 320), g = c.getContext('2d');
+      const st = bar(el, [['Clear', () => g.clearRect(0, 0, 320, 320)], ['Eraser: off', e => { er ^= 1; e.target.textContent = 'Eraser: ' + (er ? 'on' : 'off'); }]]);
+      st.textContent = 'Draw something!';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;justify-content:center;align-items:center;margin:8px;flex-wrap:wrap';
+      cols.forEach(k => { const b = document.createElement('div'); b.style.cssText = `width:28px;height:28px;border-radius:50%;background:${k};cursor:pointer`; b.onclick = () => { col = k; er = 0; }; row.append(b); });
+      [3, 6, 12, 20].forEach(s => { const b = document.createElement('div'); b.style.cssText = `width:${s + 10}px;height:${s + 10}px;border-radius:50%;background:#fff8ee;cursor:pointer`; b.onclick = () => sz = s; row.append(b); });
+      el.append(row);
+      const pos = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * 320 / r.width, (e.clientY - r.top) * 320 / r.height]; };
+      c.onpointerdown = e => { dn = 1; [lx, ly] = pos(e); };
+      c.onpointermove = e => {
+        if (!dn) return;
+        const [x, y] = pos(e);
+        g.globalCompositeOperation = er ? 'destination-out' : 'source-over';
+        g.strokeStyle = col; g.lineWidth = sz; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(lx, ly); g.lineTo(x, y); g.stroke();
+        lx = x; ly = y;
+      };
+      c.onpointerup = c.onpointerleave = () => dn = 0;
+      return () => { g.globalCompositeOperation = 'source-over'; };
+    }
+  },
+  coding: {
+    name: 'Coding Puzzles', icon: '💻',
+    run(el) {
+      const LV = [{p: [4, 0], t: [0, 4]}, {p: [0, 0], t: [4, 4]}, {p: [2, 0], t: [2, 4]}];
+      const D = {U: [-1, 0], D: [1, 0], L: [0, -1], R: [0, 1]}, A = {U: '⬆️', D: '⬇️', L: '⬅️', R: '➡️'};
+      let lv = 0, prog = [], pos = [...LV[0].p], busy = 0;
+      const st = bar(el, [['Run ▶', () => run()], ['Clear', () => { if (!busy) { prog = []; draw(); } }]]);
+      st.textContent = 'Put the arrows in order to reach the star!';
+      const cmds = document.createElement('div');
+      cmds.style.cssText = 'display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:8px';
+      Object.keys(D).forEach(k => { const b = document.createElement('button'); b.textContent = A[k]; b.onclick = () => { if (!busy && prog.length < 12) { prog.push(k); draw(); } }; cmds.append(b); });
+      el.append(cmds);
+      const seq = document.createElement('div'); seq.style.cssText = 'text-align:center;min-height:30px;margin:6px'; el.append(seq);
+      const bd = document.createElement('div');
+      bd.style.cssText = 'display:grid;grid-template-columns:repeat(5,52px);gap:4px;justify-content:center;margin:8px auto';
+      el.append(bd);
+      const draw = () => {
+        seq.textContent = prog.map(k => A[k]).join(' ') || 'Tap arrows to build your program';
+        bd.innerHTML = '';
+        for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+          const d = document.createElement('div'); d.className = 'cell'; d.style.width = d.style.height = '52px';
+          d.textContent = pos[0] == r && pos[1] == c ? '🤖' : (LV[lv].t[0] == r && LV[lv].t[1] == c ? '⭐' : '');
+          bd.append(d);
+        }
+      };
+      const run = () => {
+        if (busy || !prog.length) return;
+        busy = 1; pos = [...LV[lv].p]; draw();
+        let i = 0;
+        const go = () => {
+          if (i < prog.length) {
+            const [dr, dc] = D[prog[i++]];
+            pos = [Math.min(4, Math.max(0, pos[0] + dr)), Math.min(4, Math.max(0, pos[1] + dc))];
+            draw(); setTimeout(go, 400);
+          } else {
+            busy = 0;
+            if (pos[0] == LV[lv].t[0] && pos[1] == LV[lv].t[1]) {
+              st.textContent = 'Yay! You reached the star 🎉';
+              lv = (lv + 1) % LV.length;
+              setTimeout(() => { prog = []; pos = [...LV[lv].p]; draw(); st.textContent = 'Next puzzle!'; }, 1500);
+            } else {
+              st.textContent = 'Almost! Change your arrows and try again';
+              pos = [...LV[lv].p]; draw();
+            }
+          }
+        };
+        go();
+      };
+      draw();
+      return null;
+    }
+  },
+  dig: {
+    name: 'Dig & Craft', icon: '⛏️',
+    run(el) {
+      const W = 12, H = 9, N = {1: 'Dirt 🟫', 2: 'Stone 🪨', 3: 'Gem 💎'}, C = {0: '#1b1740', 1: '#8b5a2b', 2: '#7a7a8c', 3: '#5ee7ff'};
+      let w, inv, mode = 0, pt = 1;
+      const st = bar(el, [
+        ['New world', () => init()],
+        ['Mode: mine', e => { mode ^= 1; e.target.textContent = 'Mode: ' + (mode ? 'place' : 'mine'); }],
+        ['Place: dirt', e => { pt = pt % 3 + 1; e.target.textContent = 'Place: ' + N[pt].split(' ')[0].toLowerCase(); }]
+      ]);
+      const bd = document.createElement('div');
+      bd.style.cssText = `display:grid;grid-template-columns:repeat(${W},30px);gap:2px;justify-content:center;margin:8px auto`;
+      el.append(bd);
+      const draw = () => {
+        st.textContent = `Inventory: dirt ${inv[1]} · stone ${inv[2]} · gems ${inv[3]}`;
+        bd.innerHTML = '';
+        w.forEach((v, i) => {
+          const d = document.createElement('div');
+          d.style.cssText = `width:30px;height:30px;border-radius:4px;background:${C[v]};cursor:pointer`;
+          d.onclick = () => hit(i);
+          bd.append(d);
+        });
+      };
+      const hit = i => {
+        if (!mode) { if (w[i]) { inv[w[i]]++; w[i] = 0; draw(); } }
+        else if (!w[i] && inv[pt] > 0) { w[i] = pt; inv[pt]--; draw(); }
+      };
+      const init = () => {
+        inv = {1: 0, 2: 0, 3: 0}; w = [];
+        for (let i = 0; i < W * H; i++) {
+          const r = (i / W) | 0;
+          w.push(r < 3 ? 0 : r >= 6 && Math.random() < .25 ? 2 : Math.random() < .05 ? 3 : 1);
+        }
+        draw();
+      };
+      init();
+      return null;
+    }
+  },
+  monopoly: {
+    name: 'Monopoly Lite', icon: '🎲',
+    run(el) {
+      const SP = ['Start', 'Oak St', 'Pine Ave', 'Chance', 'Lake Rd', 'Mint Ln', 'Jail', 'Cedar Ct', 'Maple Dr', 'Bonus', 'Elm Way', 'Rose Blvd'];
+      const PR = {1: 100, 2: 120, 4: 140, 5: 160, 7: 180, 8: 200, 10: 220, 11: 240};
+      let money, pos, own, turn, over;
+      const say = s => st.textContent = s;
+      const st = bar(el, [['Roll 🎲', () => roll()], ['New game', () => init()]]);
+      const bd = document.createElement('div');
+      bd.style.cssText = 'display:grid;grid-template-columns:repeat(4,88px);gap:6px;justify-content:center;margin:10px auto';
+      el.append(bd);
+      const info = document.createElement('div'); info.style.cssText = 'text-align:center;margin:6px'; el.append(info);
+      const draw = () => {
+        bd.innerHTML = '';
+        SP.forEach((n, i) => {
+          const d = document.createElement('div');
+          d.style.cssText = 'border-radius:10px;background:#2c2953;padding:6px;font-size:13px;min-height:64px';
+          const who = PR[i] ? (own[i] == 0 ? ' (you)' : own[i] == 1 ? ' (CPU)' : '') : '';
+          d.textContent = n + (PR[i] ? ' $' + PR[i] + who : '') + ' ' + (pos[0] == i ? '🔴' : '') + (pos[1] == i ? '🔵' : '');
+          bd.append(d);
+        });
+        info.textContent = `You $${money[0]} · Computer $${money[1]}`;
+      };
+      const land = (who, i) => {
+        const nm = who ? 'Computer' : 'You';
+        if (PR[i]) {
+          if (own[i] < 0) {
+            if (money[who] >= PR[i]) { money[who] -= PR[i]; own[i] = who; return `${nm} bought ${SP[i]}`; }
+            return `${nm} can't afford ${SP[i]}`;
+          }
+          if (own[i] == who) return 'Your own property';
+          const r = PR[i] / 4; money[who] -= r; money[1 - who] += r;
+          return `${nm} paid $${r} rent`;
+        }
+        if (i == 9) { money[who] += 100; return `${nm} got a $100 bonus`; }
+        if (i == 3) { const x = Math.random() < .5 ? 50 : -50; money[who] += x; return 'Chance: ' + (x > 0 ? '+$50' : '-$50'); }
+        if (i == 6) return 'Just visiting jail';
+        return '';
+      };
+      const move = who => {
+        const d = 2 + rnd(6) + rnd(5);
+        const old = pos[who]; pos[who] = (old + d) % 12;
+        if (pos[who] < old) money[who] += 200;
+        return `${who ? 'Computer' : 'You'} rolled ${d}. ` + land(who, pos[who]);
+      };
+      const check = () => {
+        if (money[0] < 0) { over = 1; return 'You went bankrupt 💸'; }
+        if (money[1] < 0) { over = 1; return 'Computer went bankrupt. You win! 🎉'; }
+        return null;
+      };
+      const cpu = () => {
+        if (over) return;
+        const msg = move(1); draw();
+        const e = check(); say(msg + (e ? ' · ' + e : ''));
+        turn = 0;
+      };
+      const roll = () => {
+        if (over || turn) return;
+        say(move(0)); draw();
+        const e = check(); if (e) { say(e); return; }
+        turn = 1; setTimeout(cpu, 1000);
+      };
+      const init = () => { money = [1500, 1500]; pos = [0, 0]; own = Array(12).fill(-1); turn = 0; over = 0; draw(); say('Roll to start! Land on properties to buy them.'); };
+      init();
+      return null;
+    }
+  },
+  chess: {
+    name: 'Chess', icon: '♞',
+    run(el) {
+      const GL = {k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟'};
+      const DIRS = {r: [[1, 0], [-1, 0], [0, 1], [0, -1]], b: [[1, 1], [1, -1], [-1, 1], [-1, -1]]};
+      DIRS.q = [...DIRS.r, ...DIRS.b]; DIRS.k = DIRS.q;
+      const KN = [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]];
+      const white = p => !!p && p < 'a';
+      const gen = (b, w) => {
+        const out = [];
+        for (let i = 0; i < 64; i++) {
+          const p = b[i];
+          if (!p || white(p) != w) continue;
+          const t = p.toLowerCase(), r = i >> 3, c = i & 7;
+          const ok = (R, C) => {
+            if (R < 0 || R > 7 || C < 0 || C > 7) return 0;
+            const j = R * 8 + C;
+            if (b[j] && white(b[j]) == w) return 0;
+            out.push([i, j]);
+            return !b[j];
+          };
+          if (t == 'p') {
+            const d = w ? -1 : 1, start = w ? 6 : 1;
+            if (r + d >= 0 && r + d < 8 && !b[(r + d) * 8 + c]) {
+              out.push([i, (r + d) * 8 + c]);
+              if (r == start && !b[(r + 2 * d) * 8 + c]) out.push([i, (r + 2 * d) * 8 + c]);
+            }
+            [-1, 1].forEach(dc => {
+              const R = r + d, C = c + dc;
+              if (R >= 0 && R < 8 && C >= 0 && C < 8) { const j = R * 8 + C; if (b[j] && white(b[j]) != w) out.push([i, j]); }
+            });
+          } else if (t == 'n') KN.forEach(([dr, dc]) => ok(r + dr, c + dc));
+          else DIRS[t].forEach(([dr, dc]) => { for (let k = 1; k < (t == 'k' ? 2 : 8); k++) if (!ok(r + dr * k, c + dc * k)) break; });
+        }
+        return out;
+      };
+      const mv = (b, [i, j]) => {
+        const n = [...b]; let p = n[i];
+        if (p.toLowerCase() == 'p' && (j >> 3 == 0 || j >> 3 == 7)) p = white(p) ? 'Q' : 'q';
+        n[j] = p; n[i] = '';
+        return n;
+      };
+      let B, turn, sel, tgt, over;
+      const say = s => st.textContent = s;
+      const st = bar(el, [['New game', () => init()]]);
+      const bd = document.createElement('div');
+      bd.style.cssText = 'display:grid;grid-template-columns:repeat(8,40px);width:320px;margin:8px auto;border:2px solid #fff8ee';
+      el.append(bd);
+      const draw = () => {
+        bd.innerHTML = '';
+        for (let i = 0; i < 64; i++) {
+          const r = i >> 3, c = i & 7, d = document.createElement('div');
+          const bg = i == sel ? '#ffd93d' : tgt.includes(i) ? '#6bcb77' : (r + c) % 2 ? '#8b6f47' : '#d9c8a9';
+          d.style.cssText = `width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:30px;cursor:pointer;background:${bg};color:${white(B[i]) ? '#fff' : '#111'}`;
+          d.textContent = B[i] ? GL[B[i].toLowerCase()] : '';
+          d.onclick = () => click(i);
+          bd.append(d);
+        }
+      };
+      const end = () => {
+        if (!B.includes('k')) { over = 1; say('You win! 🎉'); }
+        else if (!B.includes('K')) { over = 1; say('Computer wins. Try again!'); }
+      };
+      const cpu = () => {
+        if (over) return;
+        const ms = gen(B, false);
+        if (!ms.length) { over = 1; say('Computer has no moves. You win! 🎉'); return; }
+        const caps = ms.filter(m => B[m[1]]);
+        const pool = caps.length ? caps : ms;
+        B = mv(B, pool[rnd(pool.length)]); draw(); end();
+        if (!over) { turn = 0; say('Your turn (white)'); }
+      };
+      const click = i => {
+        if (over || turn) return;
+        if (sel != null && tgt.includes(i)) {
+          B = mv(B, [sel, i]); sel = null; tgt = []; draw(); end();
+          if (!over) { turn = 1; say('Computer is thinking…'); setTimeout(cpu, 600); }
+          return;
+        }
+        if (B[i] && white(B[i])) { sel = i; tgt = gen(B, true).filter(m => m[0] == i).map(m => m[1]); }
+        else { sel = null; tgt = []; }
+        draw();
+      };
+      const init = () => {
+        const back = 'rnbqkbnr';
+        B = Array(64).fill('');
+        for (let c = 0; c < 8; c++) { B[c] = back[c]; B[8 + c] = 'p'; B[48 + c] = 'P'; B[56 + c] = back[c].toUpperCase(); }
+        turn = 0; sel = null; tgt = []; over = 0;
+        draw(); say('Your turn (white)');
+      };
+      init();
+      return null;
+    }
+  },
+  doodle: {
+    name: 'Doodle Pad', icon: '🎨',
+    run(el) {
+      const cols = ['#ffffff', '#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#c77dff'];
+      let col = cols[0], dn = 0, lx, ly;
+      const c = mk(el, 320, 320), g = c.getContext('2d');
+      const st = bar(el, [['Clear', () => g.clearRect(0, 0, 320, 320)]]);
+      st.textContent = 'Draw something!';
+      const sw = document.createElement('div');
+      sw.style.cssText = 'display:flex;gap:8px;justify-content:center;margin:8px';
+      cols.forEach(k => {
+        const b = document.createElement('div');
+        b.style.cssText = `width:28px;height:28px;border-radius:50%;background:${k};cursor:pointer`;
+        b.onclick = () => col = k;
+        sw.append(b);
+      });
+      el.append(sw);
+      const pos = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * 320 / r.width, (e.clientY - r.top) * 320 / r.height]; };
+      c.onpointerdown = e => { dn = 1; [lx, ly] = pos(e); };
+      c.onpointermove = e => {
+        if (!dn) return;
+        const [x, y] = pos(e);
+        g.strokeStyle = col; g.lineWidth = 6; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(lx, ly); g.lineTo(x, y); g.stroke();
+        lx = x; ly = y;
+      };
+      c.onpointerup = c.onpointerleave = () => dn = 0;
+      return null;
+    }
+  }
+};
+
+const SOON = [['Monopoly', '🎲'], ['Dig & Craft', '⛏️'], ['Coding Puzzles', '💻'], ['Chess', '♟️'], ['Drawing+', '🖌️']];
+
+let stopFn = null;
+function closeGame() { if (stopFn) { stopFn(); stopFn = null; } }
+function home() {
+  closeGame();
+  $('#stage').innerHTML = '';
+  $('#play').style.display = 'none';
+  $('#hub').style.display = 'grid';
+  $('#back').hidden = true;
+  $('#title').textContent = 'Selection of Games';
+}
+function open(g) {
+  closeGame();
+  $('#hub').style.display = 'none';
+  $('#play').style.display = 'block';
+  $('#back').hidden = false;
+  $('#title').textContent = g.name;
+  $('#stage').innerHTML = '';
+  stopFn = g.run($('#stage')) || null;
+}
+
+$('#back').onclick = home;
+const hub = $('#hub');
+Object.values(GAMES).forEach(g => {
+  const t = document.createElement('div');
+  t.className = 'tile';
+  t.innerHTML = `<div class="i">${g.icon}</div><div class="n">${g.name}</div>`;
+  t.onclick = () => open(g);
+  hub.append(t);
+});
+[].forEach(([n, i]) => {
+  const t = document.createElement('div');
+  t.className = 'tile locked';
+  t.innerHTML = `<div class="i">${i}</div><div class="n">${n}</div><div class="s">Coming soon</div>`;
+  hub.append(t);
+});
+home();
+</script>
+</body>
+</html>
